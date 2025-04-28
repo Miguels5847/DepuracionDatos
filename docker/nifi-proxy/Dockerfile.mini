@@ -1,0 +1,25 @@
+FROM python:3.9-slim
+
+# Instalar dependencias
+RUN apt-get update && apt-get install -y curl && apt-get clean
+RUN pip install flask requests
+
+# Copiar el código
+WORKDIR /app
+
+# Variables de entorno por defecto
+ENV NIFI_HOST=nifi_centrosur
+ENV NIFI_PORT=8443
+ENV NIFI_USERNAME=admin
+ENV NIFI_PASSWORD=centrosur123
+ENV PORT=5001
+ENV PYTHONUNBUFFERED=1
+
+# Exponer puerto
+EXPOSE 5001
+
+# Copiar el código al final para aprovechar el caché de capas
+COPY mini_proxy.py /app/mini_proxy.py
+
+# Comando para iniciar el mini-proxy
+CMD ["python", "mini_proxy.py"]
