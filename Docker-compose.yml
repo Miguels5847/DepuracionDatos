@@ -1,0 +1,240 @@
+version: '3'
+services:
+  postgres:
+    image: postgres:16
+    container_name: postgres_centrosur
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_PASSWORD=1150040812
+      - POSTGRES_USER=postgres
+      - POSTGRES_DB=centrosur
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/sql/init:/docker-entrypoint-initdb.d
+      - ./database/bdcentrosur.sql:/docker-entrypoint-initdb.d/bdcentrosur.sql
+    command:
+      - postgres
+      - -c
+      - max_connections=100
+      - -c
+      - shared_buffers=256MB
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - centrosur-network
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin_centrosur
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@centrosur.com
+      - PGADMIN_DEFAULT_PASSWORD=1150040812
+      - PGADMIN_SERVER_JSON_FILE=/pgadmin4/servers.json
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ./configs/servers.json:/pgadmin4/servers.json
+    restart: unless-stopped
+    networks:
+      - centrosur-network
+
+  nifi_centrosur:
+    image: apache/nifi:2.2.0
+    container_name: nifi_centrosur
+    ports:
+      - "8443:8443"
+    environment:
+      - NIFI_WEB_HTTPS_HOST=0.0.0.0
+      - NIFI_WEB_HTTPS_PORT=8443
+      - SINGLE_USER_CREDENTIALS_USERNAME=admin
+      - SINGLE_USER_CREDENTIALS_PASSWORD=centrosur123
+      - NIFI_SECURITY_ALLOW_ANONYMOUS_AUTHENTICATION=false
+      - NIFI_SECURITY_USER_LOGIN_IDENTITY_PROVIDER=single-user-provider
+      - NIFI_SECURITY_USER_AUTHORIZER=single-user-authorizer
+      - NIFI_WEB_PROXY_HOST=0.0.0.0
+      - NIFI_WEB_PROXY_CONTEXT_PATH=/nifi
+      - NIFI_JVM_HEAP_INIT=2g
+      - NIFI_JVM_HEAP_MAX=4g
+      - NIFI_SECURITY_TLS_PROTOCOL=TLSv1.2
+      - NIFI_WEB_HTTPS_CLIENT_AUTH=wantClientAuth
+      - NIFI_SECURITY_USER_AUTH_TLS_PROTOCOL=TLSv1.2
+    volumes:
+      - nifi_database_repository:/opt/nifi/nifi-current/database_repository
+      - nifi_flowfile_repository:/opt/nifi/nifi-current/flowfile_repository
+      - nifi_content_repository:/opt/nifi/nifi-current/content_repository
+      - nifi_provenance_repository:/opt/nifi/nifi-current/provenance_repository
+      - nifi_conf:/opt/nifi/nifi-current/conf
+      - nifi_state:/opt/nifi/nifi-current/state
+      - nifi_logs:/opt/nifi/nifi-current/logs
+      - shared_backups:/var/lib/pgadmin/storage/admin@centrosur.com
+      - ./docker/nifi/drivers:/opt/nifi/nifi-current/drivers
+    restart: unless-stopped
+    networks:
+      centrosur-network:
+        aliases:
+          - nifi_centrosur
+
+  airflow:
+    build: .
+    container_name: airflow_centrosur
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://postgres:1150040812@postgres_centrosur/airflow
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW__WEBSERVER__EXPOSE_CONFIG=True
+    volumes:
+      - ./docker/airflow/dags:/opt/airflow/dags
+      - ./docker/airflow/logs:/opt/airflow/logs
+      - ./scripts/python:/opt/airflow/scripts
+      - ./data:/opt/airflow/data
+      - ./plugins:/opt/airflow/plugins
+    ports:
+      - "8081:8080"
+    command: >
+      bash -c "airflow db init &&
+               airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com &&
+               airflow webserver & 
+               airflow scheduler"
+    restart: unless-stopped
+    networks:
+      - centrosur-network
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.3.0
+    container_name: zookeeper_centrosur
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper/data
+      - zookeeper_log:/var/lib/zookeeper/log
+    restart: unless-stopped
+    networks:
+      - centrosur-network
+
+  kafka:
+    image: confluentinc/cp-kafka:7.3.0
+    container_name: kafka_centrosur
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      - KAFKA_BROKER_ID=1
+      - KAFKA_ZOOKEEPER_CONNECT=zookeeper_centrosur:2181
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka_centrosur:9092
+      - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT
+      - KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT
+      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+      - KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS=0
+      - KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1
+      - KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1
+      - KAFKA_CLUSTER_ID_GENERATION_ENABLE=true
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    restart: unless-stopped
+    networks:
+      - centrosur-network
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka_ui_centrosur
+    depends_on:
+      - kafka
+    ports:
+      - "8080:8080"
+    environment:
+      - KAFKA_CLUSTERS_0_NAME=centrosur-cluster
+      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka_centrosur:9092
+      - KAFKA_CLUSTERS_0_ZOOKEEPER=zookeeper_centrosur:2181
+    restart: unless-stopped
+    networks:
+      - centrosur-network
+
+  nifi-proxy:
+    build: ./docker/nifi-proxy
+    container_name: nifi_proxy_centrosur
+    ports:
+      - "5000:5000"
+    environment:
+      - NIFI_HOST=nifi_centrosur
+      - NIFI_PORT=8443
+      - NIFI_PROTOCOL=https
+      - NIFI_USERNAME=admin
+      - NIFI_PASSWORD=centrosur123
+      - VERIFY_SSL=false
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    depends_on:
+      - nifi_centrosur
+    networks:
+      - centrosur-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  mini-nifi-proxy:
+    build:
+      context: ./docker/nifi-proxy
+      dockerfile: Dockerfile.mini
+    container_name: mini_nifi_proxy_centrosur
+    ports:
+      - "5001:5001"
+    environment:
+      - NIFI_HOST=nifi_centrosur
+      - NIFI_PORT=8443
+      - NIFI_PROTOCOL=https
+      - NIFI_USERNAME=admin
+      - NIFI_PASSWORD=centrosur123
+      - PORT=5001
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    depends_on:
+      - nifi_centrosur
+    networks:
+      - centrosur-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  postgres_data:
+  pgadmin_data:
+  nifi_conf:
+  nifi_content_repository:
+  nifi_database_repository:
+  nifi_flowfile_repository:
+  nifi_logs:
+  nifi_provenance_repository:
+  nifi_state:
+  shared_backups:
+  zookeeper_data:
+  zookeeper_log:
+  kafka_data:
+
+networks:
+  centrosur-network:
+    name: centrosur_network
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.19.0.0/16
