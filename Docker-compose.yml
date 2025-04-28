@@ -9,22 +9,26 @@ services:
       - POSTGRES_PASSWORD=1150040812
       - POSTGRES_USER=postgres
       - POSTGRES_DB=centrosur
+      - POSTGRES_MULTIPLE_DATABASES=centrosur,airflow,base_prueba
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./scripts/sql/init:/docker-entrypoint-initdb.d
-      - ./database/bdcentrosur.sql:/docker-entrypoint-initdb.d/bdcentrosur.sql
+      - D:/CENTROSUR/bdcentrosur.sql:/docker-entrypoint-initdb.d/bdcentrosur.sql
+      - D:/CENTROSUR/scripts/sql/init/restore_databases.sh:/docker-entrypoint-initdb.d/restore_databases.sh
+      - D:/CENTROSUR/scripts/sql/init/init-multiple-databases.sh:/docker-entrypoint-initdb.d/10-init-multiple-databases.sh
+
     command:
       - postgres
       - -c
       - max_connections=100
       - -c
       - shared_buffers=256MB
+      - -c
+      - log_destination=stderr
+      - -c
+      - logging_collector=on
+      - -c
+      - log_directory=/var/log/postgresql
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
     networks:
       - centrosur-network
 
@@ -34,6 +38,8 @@ services:
     environment:
       - PGADMIN_DEFAULT_EMAIL=admin@centrosur.com
       - PGADMIN_DEFAULT_PASSWORD=1150040812
+      - PGADMIN_CONFIG_SERVER_MODE=False
+      - PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED=False
       - PGADMIN_SERVER_JSON_FILE=/pgadmin4/servers.json
     ports:
       - "5050:80"
@@ -41,13 +47,16 @@ services:
       - postgres
     volumes:
       - pgadmin_data:/var/lib/pgadmin
-      - ./configs/servers.json:/pgadmin4/servers.json
+      - D:/CENTROSUR/servers.json:/pgadmin4/servers.json
+      - D:/CENTROSUR/pgadmin_config:/var/lib/pgadmin/storage
     restart: unless-stopped
     networks:
       - centrosur-network
 
   nifi_centrosur:
     image: apache/nifi:2.2.0
+    env_file: 
+      - .env
     container_name: nifi_centrosur
     ports:
       - "8443:8443"
@@ -66,6 +75,8 @@ services:
       - NIFI_SECURITY_TLS_PROTOCOL=TLSv1.2
       - NIFI_WEB_HTTPS_CLIENT_AUTH=wantClientAuth
       - NIFI_SECURITY_USER_AUTH_TLS_PROTOCOL=TLSv1.2
+      - GITHUB_USERNAME=${GITHUB_USERNAME}
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
     volumes:
       - nifi_database_repository:/opt/nifi/nifi-current/database_repository
       - nifi_flowfile_repository:/opt/nifi/nifi-current/flowfile_repository
@@ -75,7 +86,7 @@ services:
       - nifi_state:/opt/nifi/nifi-current/state
       - nifi_logs:/opt/nifi/nifi-current/logs
       - shared_backups:/var/lib/pgadmin/storage/admin@centrosur.com
-      - ./docker/nifi/drivers:/opt/nifi/nifi-current/drivers
+      - D:/CENTROSUR/docker/nifi/drivers:/opt/nifi/nifi-current/drivers
     restart: unless-stopped
     networks:
       centrosur-network:
@@ -83,28 +94,32 @@ services:
           - nifi_centrosur
 
   airflow:
-    build: .
+    build: D:/CENTROSUR
     container_name: airflow_centrosur
     depends_on:
-      postgres:
-        condition: service_healthy
+      - postgres
     environment:
-      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
-      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://postgres:1150040812@postgres_centrosur/airflow
-      - AIRFLOW__CORE__LOAD_EXAMPLES=False
-      - AIRFLOW__WEBSERVER__EXPOSE_CONFIG=True
+      - AIRFLOW_CORE_EXECUTOR=LocalExecutor
+      - AIRFLOW_DATABASE_SQL_ALCHEMY_CONN=postgresql+psycopg2://postgres:1150040812@postgres_centrosur/airflow
+      - AIRFLOW_CORE_LOAD_EXAMPLES=False
+      - AIRFLOW_WEBSERVER_EXPOSE_CONFIG=True
+      - AIRFLOW_LOGGING_LOG_SYMLINK_DISABLED=True
+      - AIRFLOW_CORE_PARALLELISM=64
+      - AIRFLOW_CORE_DAG_CONCURRENCY=32
+      - AIRFLOW_CORE_MAX_ACTIVE_RUNS_PER_DAG=4
+      - AIRFLOW_SCHEDULER_MAX_THREADS=4 
     volumes:
-      - ./docker/airflow/dags:/opt/airflow/dags
-      - ./docker/airflow/logs:/opt/airflow/logs
-      - ./scripts/python:/opt/airflow/scripts
-      - ./data:/opt/airflow/data
-      - ./plugins:/opt/airflow/plugins
+      - D:/CENTROSUR/docker/airflow/dags:/opt/airflow/dags
+      - D:/CENTROSUR/docker/airflow/logs:/opt/airflow/logs
+      - D:/CENTROSUR/scripts/python:/opt/airflow/scripts
+      - D:/CENTROSUR/data:/opt/airflow/data
+      - D:/CENTROSUR/plugins:/opt/airflow/plugins
     ports:
       - "8081:8080"
     command: >
       bash -c "airflow db init &&
                airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com &&
-               airflow webserver & 
+               airflow webserver --port 8080 &  
                airflow scheduler"
     restart: unless-stopped
     networks:
@@ -165,7 +180,7 @@ services:
       - centrosur-network
 
   nifi-proxy:
-    build: ./docker/nifi-proxy
+    build: D:/CENTROSUR/nifi-proxy
     container_name: nifi_proxy_centrosur
     ports:
       - "5000:5000"
@@ -191,7 +206,7 @@ services:
 
   mini-nifi-proxy:
     build:
-      context: ./docker/nifi-proxy
+      context: D:/CENTROSUR/nifi-proxy
       dockerfile: Dockerfile.mini
     container_name: mini_nifi_proxy_centrosur
     ports:
@@ -199,11 +214,10 @@ services:
     environment:
       - NIFI_HOST=nifi_centrosur
       - NIFI_PORT=8443
-      - NIFI_PROTOCOL=https
       - NIFI_USERNAME=admin
       - NIFI_PASSWORD=centrosur123
       - PORT=5001
-      - PYTHONUNBUFFERED=1
+      - DEBUG=true
     restart: unless-stopped
     depends_on:
       - nifi_centrosur
@@ -230,11 +244,16 @@ volumes:
   zookeeper_data:
   zookeeper_log:
   kafka_data:
-
-networks:
+  nifi_registry_data:
+  nifi_registry_flow_storage:
+  nifi_registry_database:
+  nifi_registry_extensions:
+  nifi_registry_logs:
+  nifi_registry_run:
+networks:	
   centrosur-network:
     name: centrosur_network
-    driver: bridge
+    driver: bridge	
     ipam:
       config:
         - subnet: 172.19.0.0/16
