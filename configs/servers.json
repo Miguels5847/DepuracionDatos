@@ -1,0 +1,31 @@
+{
+    "Servers": {
+        "1": {
+            "Name": "PostgreSQL_CentroSur",
+            "Host": "postgres_centrosur",
+            "Port": 5432,
+            "MaintenanceDB": "centrosur",
+            "Username": "postgres",
+            "Password": "1150040812",
+            "SSLMode": "disable"
+        },
+        "2": {
+            "Name": "PostgreSQL_BasePrueba",
+            "Host": "postgres_centrosur",
+            "Port": 5432,
+            "MaintenanceDB": "base_prueba",
+            "Username": "postgres",
+            "Password": "1150040812",
+            "SSLMode": "disable"
+        },
+        "3": {
+            "Name": "PostgreSQL_Airflow",
+            "Host": "postgres_centrosur",
+            "Port": 5432,
+            "MaintenanceDB": "airflow",
+            "Username": "postgres",
+            "Password": "1150040812",
+            "SSLMode": "disable"
+        }
+    }
+}
