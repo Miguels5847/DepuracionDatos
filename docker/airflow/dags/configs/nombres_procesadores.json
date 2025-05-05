@@ -1,0 +1,34 @@
+{
+  "grupos": {
+    "productor": "Grupo Productor",
+    "consumidor": "Grupo Consumidor"
+  },
+  "ids_conocidos": {
+    "grupos": {
+      "productor": "4dcc0bed-9061-3a4c-0000-c375f77615eb",
+      "consumidor": "723a3709-dabb-3fae-0000-2892da95b9a6"
+    },
+    "procesadores": {
+      "publish_kafka": "3893b585-c041-314d-b9a0-2d8967f612fc",
+      "consume_kafka": "6364f7c9-07f1-394d-021c-db2529cca44c"
+    }
+  },
+  "procesadores": {
+    "query_db_table": "QueryDatabaseTable",
+    "log_attribute_producer_1": "LogAttribute",
+    "convert_record": "ConvertRecord",
+    "log_attribute_producer_2": "LogAttribute",
+    "split_json": "SplitJson",
+    "log_attribute_producer_3": "LogAttribute",
+    "merge_content": "MergeContent",
+    "publish_kafka": "PublishKafkaRecord",
+    "put_database_record": "PutDatabaseRecord",
+    "consume_kafka": "ConsumeKafkaRecord",
+    "log_attribute_consumer_1": "LogAttribute",
+    "evaluate_json_path": "EvaluateJsonPath",
+    "replace_text": "ReplaceText",
+    "log_attribute_consumer_2": "LogAttribute",
+    "put_db": "PutDatabaseRecord",
+    "log_attribute_consumer_3": "LogAttribute"
+  }
+}
